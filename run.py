@@ -1,76 +1,141 @@
 import os
+import sys
 import requests
 from bs4 import BeautifulSoup
-import urllib.request
 from PIL import Image as PILImage
 
-# init
-# todo 인자받기
+'''
+todo list
+- 속도개선
+- 인자 받기
+- ui 툴로 컨버팅
+- requiements.txt 최신화 (urllib 삭제)
+'''
+
+#-------- init
 name = ''
 baseUrl = ''
-# todo baseUrl 끝에 / 있음 자르기
+# fixme baseUrl 끝에 / 있음 자르기
 basePath = ''
 imgSelector = ''
 
 outputDir = './' + name + '/'
 outputImgFileNameBase = outputDir + name + '_img_%d%s'
 
-startParam = 3
-endParam = 6 # 안썻을때 req status보고 200 !== 시 정지, 셀릭터 10회 이상 비면 정지
-endParam += 1
+startParam = 4
+endParam = 6
 
-# start logic
-
+#-------- start logic
 def getExtension(filename):
     ext = '.'.join(filename.split('.')[1:])
     return '.' + ext if ext else '.jpg'
 
-# todo mkdir
+def reqCheck(url):
+    try:
+        res = requests.get(url)
+        if (200 > res.status_code or res.status_code >= 300):
+            print('ERROR:: HTTP status code: %s' % res.status_code)
+            res = False
+    except:
+        print('ERROR:: HTTP request error.')
+        res = False
+    return res
 
-pageNum = 1
-for i in range (startParam, endParam):
-    print(str(pageNum) + '화 저장중...')
+# mkdir 
+try:
+    if not (os.path.isdir(outputDir)):
+        print('Directory create "%s"' % outputDir)
+        os.makedirs(outputDir)
+except OSError as e:
+    print('ERROR:: Failed to make directory: ', e)
+    # quit()
+    sys.exit(1)
 
-    ext = None
-    tempImgArr = []
-    fullWidth, fullHeight = 0, 0
+pageNum = 0
+nowParam = (startParam-1)
+selectorEmptyCnt, pageReqErrCnt, imgReqErrIdx = 0, 0, False
+while True:
+    # break check
+    if (imgReqErrIdx != False):
+            print('END:: %d page in image name %s request error' % (nowParam, imgReqErrIdx))
+            break
+    else:
+        if (endParam):
+            if (nowParam == endParam):
+                print('END:: Page loop is end. Done.')
+                break
+        else:
+            if (selectorEmptyCnt > 5):
+                print('END:: Selector empty count (%d).' % selectorEmptyCnt)
+                break
+            elif (pageReqErrCnt > 5):
+                print('END:: Page request error count (%d).' % pageReqErrCnt)
+                break
+    
+    pageNum += 1
+    nowParam += 1
+
+    print(str(pageNum) + ' page crawling start')
 
     # HTTP GET request
     url = baseUrl + basePath
-    req = requests.get(url % startParam) # todo !== 200 에러
-    # get HTML soruce
-    html = req.text
+    res = reqCheck(url % nowParam)
+    if not res:
+        print('ERROR:: Page request error. go to next')
+        if not (endParam): pageReqErrCnt += 1
+        continue
 
     # html.parsing
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(res.text, 'html.parser')
 
     # loop tempImg
-    for imgTag in soup.select(imgSelector):
+    imgTags = soup.select(imgSelector)
+    if not (len(imgTags)):
+        print('ERROR::Selector empty result. go to next')
+        if not (endParam): selectorEmptyCnt += 1
+        continue
+
+    print('found %d image' % len(imgTags))
+    ext = None
+    tempImgArr = []
+    fullWidth, fullHeight = 0, 0
+    for imgTag in imgTags:
         src = imgTag.get('src')
+        # relative, absoulte root
         imgUrl = src if ('//' in src) else baseUrl + src
         imgName = os.path.basename(imgUrl)
         tempImgFileName = outputDir + imgName
 
         # extention
-        if not ext:
-            ext = getExtension(imgName)
+        if not ext: ext = getExtension(imgName)
 
-        # img save
-        urllib.request.urlretrieve(imgUrl, tempImgFileName)
-        # todo 파일명 중복시?
-        # 엑박 이미지일 경우?
+        # get img
+        imgRes = reqCheck(imgUrl)
+        if not imgRes:
+            print('ERROR:: Image request error')
+            imgReqErrIdx = imgName
+            break
 
-        tempImg = PILImage.open(tempImgFileName)
-        width , height = tempImg.size
-        tempImgArr.append(tempImg)
-        # set outputImg max width
-        fullWidth = max(fullWidth, width)
-        # stack outputImg height
-        fullHeight += height
-        # img remove
-        os.remove(tempImgFileName)
+        # append img
+        # fixme 파일명 중복시 파일명 뒤에 (1) 붙이기
+        with open(tempImgFileName, 'wb') as f:
+            # img write
+            f.write(requests.get(imgUrl).content)
+            
+            tempImg = PILImage.open(tempImgFileName)
+            width, height = tempImg.size
+            tempImgArr.append(tempImg)
+            # set outputImg max width
+            fullWidth = max(fullWidth, width)
+            # stack outputImg height
+            fullHeight += height
+            
+            # img remove
+            os.remove(tempImgFileName)
 
-    # merge now page in img
+    if (imgReqErrIdx != False): continue
+
+    # merge imgs in page
     canvas = PILImage.new('RGB', (fullWidth, fullHeight), 'white')
     pasteHeightPosition = 0
     for tempImg in tempImgArr:
@@ -79,7 +144,6 @@ for i in range (startParam, endParam):
         pasteHeightPosition += height
     
     # save
-    canvas.save(outputImgFileNameBase % (pageNum, 'jpg'))
+    canvas.save(outputImgFileNameBase % (pageNum, ext))
 
-    print(str(pageNum) + '화 저장완료')
-    pageNum += 1
+    print(str(pageNum) + ' page saved')
