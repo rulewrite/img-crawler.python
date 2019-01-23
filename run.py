@@ -5,25 +5,27 @@ from bs4 import BeautifulSoup
 from PIL import Image as PILImage
 
 '''
-todo list
+TODO: list
 - 속도개선
 - 인자 받기
 - ui 툴로 컨버팅
 - requiements.txt 최신화 (urllib 삭제)
+- url parameter로 처리 불가한 웹페이지
 '''
 
 #-------- init
-name = ''
 baseUrl = ''
-# fixme baseUrl 끝에 / 있음 자르기
+if (baseUrl[-1:] == '/'): baseUrl = baseUrl[:-1]
 basePath = ''
+if (basePath[0] != '/'): basePath = '/' + basePath
 imgSelector = ''
 
+name = ''
 outputDir = './' + name + '/'
-outputImgFileNameBase = outputDir + name + '_img_%d%s'
+outputImgFileNameBase = outputDir + name + '_img_%d'
 
 startParam = 4
-endParam = 6
+endParam = 500
 
 #-------- start logic
 def getExtension(filename):
@@ -41,61 +43,73 @@ def reqCheck(url):
         res = False
     return res
 
-# mkdir 
+def getUniqueFileName(filename, ext):
+    if (os.path.isfile(filename + ext)):
+        filename += ' (%d)'
+        idx = 1
+        while os.path.isfile(filename % idx + ext):
+            idx += 1
+        filename = filename % idx
+    return filename + ext
+
+# mkdir
 try:
     if not (os.path.isdir(outputDir)):
         print('Directory create "%s"' % outputDir)
         os.makedirs(outputDir)
-except OSError as e:
-    print('ERROR:: Failed to make directory: ', e)
+except OSError as err:
+    print('ERROR:: Failed to make directory: ', err)
     # quit()
     sys.exit(1)
 
-pageNum = 0
+# loop start
+resultMsg = ''
+fileNum = 0
 nowParam = (startParam-1)
 selectorEmptyCnt, pageReqErrCnt, imgReqErrIdx = 0, 0, False
-while True:
-    # break check
+def breakCheck():
+    global resultMsg
+    isContinue = True
     if (imgReqErrIdx != False):
-            print('END:: %d page in image name %s request error' % (nowParam, imgReqErrIdx))
-            break
+        resultMsg = 'BREAK:: %d page(param: %d) in image name "%s" request error' % (fileNum, nowParam, imgReqErrIdx)
+        isContinue = False
     else:
         if (endParam):
-            if (nowParam == endParam):
-                print('END:: Page loop is end. Done.')
-                break
+            if (nowParam >= endParam):
+                resultMsg = 'DONE:: Page loop is end. Done.'
+                isContinue = False
         else:
-            if (selectorEmptyCnt > 5):
-                print('END:: Selector empty count (%d).' % selectorEmptyCnt)
-                break
-            elif (pageReqErrCnt > 5):
-                print('END:: Page request error count (%d).' % pageReqErrCnt)
-                break
-    
-    pageNum += 1
-    nowParam += 1
+            if (selectorEmptyCnt >= 5):
+                resultMsg = 'BREAK:: Selector empty count (%d).' % selectorEmptyCnt
+                isContinue = False
+            elif (pageReqErrCnt >= 5):
+                resultMsg = 'BREAK:: Page request error count (%d).' % pageReqErrCnt
+                isContinue = False
+    return isContinue
 
-    print(str(pageNum) + ' page crawling start')
+while breakCheck():
+    print('-'*30)
+    fileNum += 1
+    nowParam += 1
+    print('%d page crawling' % fileNum)
 
     # HTTP GET request
     url = baseUrl + basePath
     res = reqCheck(url % nowParam)
     if not res:
-        print('ERROR:: Page request error. go to next')
-        if not (endParam): pageReqErrCnt += 1
+        print('|- Page request error. go to next')
+        pageReqErrCnt += 1
         continue
 
     # html.parsing
-    soup = BeautifulSoup(res.text, 'html.parser')
-
-    # loop tempImg
-    imgTags = soup.select(imgSelector)
+    imgTags = BeautifulSoup(res.text, 'html.parser').select(imgSelector)
     if not (len(imgTags)):
-        print('ERROR::Selector empty result. go to next')
-        if not (endParam): selectorEmptyCnt += 1
+        print('|- Selector empty result. go to next')
+        selectorEmptyCnt += 1
         continue
 
-    print('found %d image' % len(imgTags))
+    # loop tempImg
+    print('|- found %d images' % len(imgTags))
     ext = None
     tempImgArr = []
     fullWidth, fullHeight = 0, 0
@@ -112,12 +126,12 @@ while True:
         # get img
         imgRes = reqCheck(imgUrl)
         if not imgRes:
-            print('ERROR:: Image request error')
+            print('|- image request error')
             imgReqErrIdx = imgName
             break
 
         # append img
-        # fixme 파일명 중복시 파일명 뒤에 (1) 붙이기
+        # FIXME: 파일명 중복 방지 + 디테일 추가
         with open(tempImgFileName, 'wb') as f:
             # img write
             f.write(requests.get(imgUrl).content)
@@ -132,18 +146,25 @@ while True:
             
             # img remove
             os.remove(tempImgFileName)
+        break
 
-    if (imgReqErrIdx != False): continue
+    if (len(tempImgArr)):
+        # merge imgs in page
+        canvas = PILImage.new('RGB', (fullWidth, fullHeight), 'white')
+        pasteHeightPosition = 0
+        for tempImg in tempImgArr:
+            width, height = tempImg.size
+            canvas.paste(tempImg, (0, pasteHeightPosition))
+            pasteHeightPosition += height
+        
+        # save
+        canvas.save(getUniqueFileName(outputImgFileNameBase % fileNum, ext))
 
-    # merge imgs in page
-    canvas = PILImage.new('RGB', (fullWidth, fullHeight), 'white')
-    pasteHeightPosition = 0
-    for tempImg in tempImgArr:
-        width, height = tempImg.size
-        canvas.paste(tempImg, (0, pasteHeightPosition))
-        pasteHeightPosition += height
-    
-    # save
-    canvas.save(outputImgFileNameBase % (pageNum, ext))
+        print('|- saved')
+    else:
+        print('|- empty images. unsaved')
 
-    print(str(pageNum) + ' page saved')
+resultMsg += '\nloop total: %d' % fileNum
+print('='*30)
+print(resultMsg)
+print('='*30)
