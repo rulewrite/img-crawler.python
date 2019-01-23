@@ -6,11 +6,11 @@ from PIL import Image as PILImage
 
 '''
 TODO: list
-- 속도개선
+- 속도개선 (이미지 병합 부분, 불필요한 저장부분, PIL 삭제 > requiements.txt 최신화)
 - 인자 받기
 - ui 툴로 컨버팅
-- requiements.txt 최신화 (urllib 삭제)
-- url parameter로 처리 불가한 웹페이지
+- url parameter로 처리 불가한 웹페이지 (next 버튼)
+- 모듈화, 분할
 '''
 
 #-------- init
@@ -24,8 +24,8 @@ name = ''
 outputDir = './' + name + '/'
 outputImgFileNameBase = outputDir + name + '_img_%d'
 
-startParam = 4
-endParam = 500
+startParam = 3
+endParam = 4
 
 #-------- start logic
 def getExtension(filename):
@@ -66,12 +66,12 @@ except OSError as err:
 resultMsg = ''
 fileNum = 0
 nowParam = (startParam-1)
-selectorEmptyCnt, pageReqErrCnt, imgReqErrIdx = 0, 0, False
+selectorEmptyCnt, pageReqErrCnt, imgReqErrUrl = 0, 0, False
 def breakCheck():
     global resultMsg
     isContinue = True
-    if (imgReqErrIdx != False):
-        resultMsg = 'BREAK:: %d page(param: %d) in image name "%s" request error' % (fileNum, nowParam, imgReqErrIdx)
+    if (imgReqErrUrl != False):
+        resultMsg = 'BREAK:: %d page(param: %d) in image name "%s" request error' % (fileNum, nowParam, imgReqErrUrl)
         isContinue = False
     else:
         if (endParam):
@@ -91,6 +91,7 @@ while breakCheck():
     print('-'*30)
     fileNum += 1
     nowParam += 1
+    outputImgFileName = outputImgFileNameBase % fileNum
     print('%d page crawling' % fileNum)
 
     # HTTP GET request
@@ -117,21 +118,20 @@ while breakCheck():
         src = imgTag.get('src')
         # relative, absoulte root
         imgUrl = src if ('//' in src) else baseUrl + src
-        imgName = os.path.basename(imgUrl)
-        tempImgFileName = outputDir + imgName
 
-        # extention
-        if not ext: ext = getExtension(imgName)
+        # set extention
+        if not ext: ext = getExtension(os.path.basename(src))
+
+        tempImgFileName = getUniqueFileName(outputImgFileName + '_temp', ext)
 
         # get img
         imgRes = reqCheck(imgUrl)
         if not imgRes:
             print('|- image request error')
-            imgReqErrIdx = imgName
+            imgReqErrUrl = imgUrl
             break
 
         # append img
-        # FIXME: 파일명 중복 방지 + 디테일 추가
         with open(tempImgFileName, 'wb') as f:
             # img write
             f.write(requests.get(imgUrl).content)
@@ -157,7 +157,7 @@ while breakCheck():
             pasteHeightPosition += height
         
         # save
-        canvas.save(getUniqueFileName(outputImgFileNameBase % fileNum, ext))
+        canvas.save(getUniqueFileName(outputImgFileName, ext))
 
         print('|- saved')
     else:
