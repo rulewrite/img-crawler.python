@@ -146,7 +146,6 @@ while breakCheck():
             
             # img remove
             os.remove(tempImgFileName)
-        break
 
     if (len(tempImgArr)):
         # merge imgs in page
