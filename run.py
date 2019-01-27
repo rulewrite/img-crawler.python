@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image as PILImage
@@ -9,11 +10,11 @@ TODO: list
 - 속도개선 (이미지 병합 부분, 불필요한 저장부분, PIL 삭제 :: readlines() > requiements.txt 최신화)
 - 인자 받기
 - ui 툴로 컨버팅
-- url parameter로 처리 불가한 웹페이지 (next 버튼)
 - 모듈화, 분할
 - err log 텍스트 파일
 '''
 
+#=============================== set parameter
 sameFileNamePass = True
 name = ''
 
@@ -25,7 +26,8 @@ startParam = None
 endParam = None
 nextSelector = ''
 
-#-------- init
+#=============================== init
+logTxt = ''
 loopType = None
 if not startParam is None:
     loopType = 'param'
@@ -42,7 +44,17 @@ if (urlPath[0] != '/'): urlPath = '/' + urlPath
 outputDir = './' + name + '/'
 outputImgFileNameBase = outputDir + name + '_img_%d'
 
-#-------- function declaration
+#=============================== function declaration
+def handleLog(addTxt = None):
+    global logTxt
+    if (addTxt is None):
+        now = time.localtime()
+        with open(outputDir + 'log_%02d%02d%02d_%02d%02d%02d.txt' % (now.tm_year, now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec), 'w') as f:
+            f.write(logTxt)
+    else:
+        print(addTxt)
+        logTxt += addTxt + '\n'
+
 def getExtension(filename):
     ext = '.'.join(filename.split('.')[1:])
     return '.' + ext if ext else '.jpg'
@@ -51,10 +63,10 @@ def reqCheck(url):
     try:
         res = requests.get(url)
         if (200 > res.status_code or res.status_code >= 300):
-            print('ERROR:: HTTP status code: %s' % res.status_code)
+            handleLog('ERROR:: HTTP status code: %s' % res.status_code)
             res = False
     except:
-        print('ERROR:: HTTP request error.')
+        handleLog('ERROR:: HTTP request error.')
         res = False
     return res
 
@@ -79,9 +91,7 @@ def saveImg(imgArr, fullWidth, fullHeight, filename):
         pasteHeightPosition += height
     canvas.save(filename)
 
-#-------- start logic
-print('=' * 30)
-
+#=============================== start logic
 # mkdir
 try:
     if not (os.path.isdir(outputDir)):
@@ -99,6 +109,7 @@ selectorEmptyCnt, pageReqErrCnt, imgReqErrUrl = 0, 0, False
 nowUrl = None
 nowParam = startParam
 nextElements = None
+
 def breakCheck():
     global resultMsg
     isContinue = True
@@ -125,7 +136,6 @@ def breakCheck():
             if nextElements is None:
                 nowUrl = urlOrigin + urlPath
             else:
-                # href를 찾고 nextElements를 False 시킨뒤
                 if (nextElements is False or not len(nextElements)):
                     resultMsg = 'DONE:: Next element is empty'
                     isContinue = False
@@ -153,17 +163,17 @@ def breakCheck():
     return isContinue
 
 while breakCheck():
-    print('-'*30)
+    handleLog('-'*30)
     fileNum += 1
     ext = None
     outputImgFileNameYetExt = outputImgFileNameBase % fileNum
     thisPagePass = False
-    print('%d page crawling' % fileNum)
+    handleLog('%d page crawling' % fileNum)
 
     # HTTP GET request
     res = reqCheck(nowUrl)
     if not res:
-        print('|- Page request error. go to next')
+        handleLog('|- Page request error. go to next')
         pageReqErrCnt += 1
         continue
 
@@ -171,12 +181,12 @@ while breakCheck():
     bs = BeautifulSoup(res.text, 'html.parser')
     imgTags = bs.select(imgSelector)
     if not len(imgTags):
-        print('|- Selector empty result. go to next')
+        handleLog('|- Selector empty result. go to next')
         selectorEmptyCnt += 1
         continue
 
     # loop tempImg
-    print('|- found %d images' % len(imgTags))
+    handleLog('|- found %d images' % len(imgTags))
     tempImgArr = []
     fullWidth, fullHeight = 0, 0
     for imgTag in imgTags:
@@ -187,7 +197,7 @@ while breakCheck():
         # get img
         imgRes = reqCheck(imgUrl)
         if not imgRes:
-            print('|- image request error')
+            handleLog('|- image request error')
             imgReqErrUrl = imgUrl
             break
 
@@ -213,7 +223,7 @@ while breakCheck():
                 # stack outputImg height
                 fullHeight += height
                 if (fullHeight > 65500):
-                    print('| %d page is too large so divide save' % fileNum)
+                    handleLog('| %d page is too large so divide save' % fileNum)
                     fullHeight -= height
                     saveImg(tempImgArr[:-1], fullWidth, fullHeight, getUniqueFileName(outputImgFileNameYetExt, ext))
                     tempImgArr = [tempImg]
@@ -226,18 +236,18 @@ while breakCheck():
                 # img remove
                 os.remove(tempImgFileName)
             except:
-                print('ERROR:: Pillow Err outputfileNmae: "%s", tempImgName: "%s"' % (outputImgFileNameYetExt, tempImgFileName))
+                handleLog('ERROR:: Pillow Err outputfileNmae: "%s", tempImgName: "%s"' % (outputImgFileNameYetExt, tempImgFileName))
 
     if (thisPagePass):
-        print('CONTINUE:: %d page is already' % fileNum)
+        handleLog('CONTINUE:: %d page is already' % fileNum)
         continue
     
     if (len(tempImgArr)):
         # merge imgs in page
         saveImg(tempImgArr, fullWidth, fullHeight, getUniqueFileName(outputImgFileNameYetExt, ext))
-        print('|- saved')
+        handleLog('|- saved')
     else:
-        print('|- empty images. unsaved')
+        handleLog('|- empty images. unsaved')
 
     # prevent next url
     if (loopType == 'param'):
@@ -245,7 +255,8 @@ while breakCheck():
     elif (loopType == 'selector'):
         nextElements = bs.select(nextSelector)
 
-resultMsg += '\nloop total: %d' % fileNum
-print('='*30)
-print(resultMsg)
-print('='*30)
+handleLog('='*30)
+handleLog('loop total: %d' % fileNum)
+handleLog(resultMsg)
+handleLog('='*30)
+handleLog()
