@@ -11,7 +11,7 @@ TODO: list
 - 인자 받기
 - ui 툴로 컨버팅
 - 모듈화, 분할
-- err log 텍스트 파일
+- 다음 버튼 엘리먼트의 href 속성이 아닌 click event로 결려 있을 경우
 '''
 
 #=============================== set parameter
@@ -34,7 +34,7 @@ if not startParam is None:
 elif not nextSelector is None:
     loopType = 'selector'
 else:
-    print('ERROR:: Require parameter not defiend')
+    print('ERROR:: Require parameter undefiend')
     # quit()
     sys.exit(1)
 
@@ -66,7 +66,7 @@ def reqCheck(url):
             handleLog('ERROR:: HTTP status code: %s' % res.status_code)
             res = False
     except:
-        handleLog('ERROR:: HTTP request error.')
+        handleLog('ERROR:: HTTP request error')
         res = False
     return res
 
@@ -102,22 +102,22 @@ except OSError as err:
     sys.exit(1)
 
 # loop start
-resultMsg = ''
 fileNum = 0
+
+nowUrl = ''
+nowParam = startParam
+bs = None
 selectorEmptyCnt, pageReqErrCnt, imgReqErrUrl = 0, 0, False
 
-nowUrl = None
-nowParam = startParam
-nextElements = None
-
-def breakCheck():
+resultMsg = ''
+def handleLoop():
     global resultMsg
     isContinue = True
     if (imgReqErrUrl != False):
-        resultMsg = 'BREAK:: %d page(param: %d) in image name "%s" request error' % (fileNum, nowParam, imgReqErrUrl)
+        resultMsg = 'BREAK:: image url "%s" request error' % imgReqErrUrl
         isContinue = False
     elif (selectorEmptyCnt >= 5):
-        resultMsg = 'BREAK:: Selector empty count (%d).' % selectorEmptyCnt
+        resultMsg = 'BREAK:: Img tag empty count (%d).' % selectorEmptyCnt
         isContinue = False
     elif (pageReqErrCnt >= 5):
         resultMsg = 'BREAK:: Page request error count (%d).' % pageReqErrCnt
@@ -125,135 +125,117 @@ def breakCheck():
     else:
         global nowUrl
         if (loopType == 'param'):
-            if (not endParam is None and nowParam >= endParam):
-                resultMsg = 'DONE:: Page loop is end. Done.'
+            global nowParam
+            if (not endParam is None and nowParam > endParam):
+                resultMsg = 'DONE:: Param loop is done.'
                 isContinue = False
             else:
                 nowUrl = urlOrigin + urlPath % nowParam
+                nowParam += 1
         elif (loopType == 'selector'):
-            global nextElements
-            # init
-            if nextElements is None:
+            if bs is None:
                 nowUrl = urlOrigin + urlPath
             else:
-                if (nextElements is False or not len(nextElements)):
-                    resultMsg = 'DONE:: Next element is empty'
-                    isContinue = False
-                else:
+                nextEls = bs.select(nextSelector)
+                if (len(nextEls)):
                     found = False
-                    for nextEl in nextElements:
-                        nextElHref = nextEl.get('href')
+                    for nextEl in nextEls:
+                        nextElHref = nextEl.get('href') # TODO: if href="javascript:alert('is Last.')"
                         if not nextElHref is None:
-                            '''
-                            FIXME:
-                            - if href is not url
-                                - javascript:alert('is Last.')
-                                - #id
-                            - click event
-                            '''
                             nowUrl = getAbsoulteRoute(nextElHref)
                             found = True
                             break
-                        
-                    if found:
-                        nextElements = False
-                    else:
-                        resultMsg = 'BREAK:: cat\'t found attr "href"'
+                    if found is False:
+                        resultMsg = 'BREAK:: Cat\'t found attr "href"'
                         isContinue = False
+                else:
+                    resultMsg = 'DONE:: Next element is empty'
+                    isContinue = False
     return isContinue
 
-while breakCheck():
-    handleLog('-'*30)
+while handleLoop():
     fileNum += 1
     ext = None
     outputImgFileNameYetExt = outputImgFileNameBase % fileNum
-    thisPagePass = False
-    handleLog('%d page crawling' % fileNum)
+    alreadyFile = False
+    handleLog('-'*30 + '\n%d page crawling start' % fileNum)
 
-    # HTTP GET request
+    # HTTP GET page, html parsing
+    handleLog('| %s' % nowUrl)
     res = reqCheck(nowUrl)
     if not res:
-        handleLog('|- Page request error. go to next')
+        handleLog('| Page request error > continue')
         pageReqErrCnt += 1
         continue
-
-    # html.parsing
     bs = BeautifulSoup(res.text, 'html.parser')
+
+    # get img
     imgTags = bs.select(imgSelector)
     if not len(imgTags):
-        handleLog('|- Selector empty result. go to next')
+        handleLog('| Img tag empty > continue')
         selectorEmptyCnt += 1
         continue
+    handleLog('| found %d images' % len(imgTags))
 
-    # loop tempImg
-    handleLog('|- found %d images' % len(imgTags))
-    tempImgArr = []
-    fullWidth, fullHeight = 0, 0
+    # loop img
+    tempImgArr, fullWidth, fullHeight = [], 0, 0
     for imgTag in imgTags:
-        src = imgTag.get('src')
-        # relative, absoulte root
-        imgUrl = getAbsoulteRoute(src)
-
-        # get img
-        imgRes = reqCheck(imgUrl)
-        if not imgRes:
-            handleLog('|- image request error')
-            imgReqErrUrl = imgUrl
-            break
+        imgSrc = imgTag.get('src')
+        imgRoute = getAbsoulteRoute(imgSrc)
 
         # set extention
         if ext is None: 
-            ext = getExtension(os.path.basename(src))
+            ext = getExtension(os.path.basename(imgSrc))
             # already file pass
             if sameFileNamePass and os.path.isfile(outputImgFileNameYetExt + ext):
-                thisPagePass = True
+                alreadyFile = True
                 break
-        tempImgFileName = getUniqueFileName(outputImgFileNameYetExt + '_temp_%d' % len(tempImgArr), ext)
+
+        # HTTP GET img
+        imgRes = reqCheck(imgRoute)
+        if not imgRes:
+            handleLog('| Img request error > break')
+            imgReqErrUrl = imgRoute
+            break
 
         # append img
+        tempImgFileName = getUniqueFileName(outputImgFileNameYetExt + '_temp_%d' % len(tempImgArr), ext)
         with open(tempImgFileName, 'wb') as f:
-            # img write
             f.write(imgRes.content)
 
             try:
-                tempImg = PILImage.open(tempImgFileName)
-                width, height = tempImg.size
-                tempImgArr.append(tempImg)
+                img = PILImage.open(tempImgFileName)
+                width, height = img.size
+                tempImgArr.append(img)
 
                 # stack outputImg height
                 fullHeight += height
+
+                # jpg maximum height 65500
                 if (fullHeight > 65500):
-                    handleLog('| %d page is too large so divide save' % fileNum)
+                    handleLog('| Too long so divide save' % fileNum)
                     fullHeight -= height
                     saveImg(tempImgArr[:-1], fullWidth, fullHeight, getUniqueFileName(outputImgFileNameYetExt, ext))
-                    tempImgArr = [tempImg]
+                    
+                    tempImgArr = [img]
                     fullHeight = height
                     fullWidth = 0
                 
-                # set outputImg max width
+                # set outputImg wider width
                 fullWidth = max(fullWidth, width)
 
                 # img remove
                 os.remove(tempImgFileName)
             except:
-                handleLog('ERROR:: Pillow Err outputfileNmae: "%s", tempImgName: "%s"' % (outputImgFileNameYetExt, tempImgFileName))
+                handleLog('| ERROR:: Pillow error outputImgFileName: %s, tempImgFileName: %s' % (outputImgFileNameYetExt, tempImgFileName))
 
-    if (thisPagePass):
+    # merge imgs in page
+    if (alreadyFile):
         handleLog('CONTINUE:: %d page is already' % fileNum)
         continue
-    
-    if (len(tempImgArr)):
-        # merge imgs in page
-        saveImg(tempImgArr, fullWidth, fullHeight, getUniqueFileName(outputImgFileNameYetExt, ext))
-        handleLog('|- saved')
-    else:
-        handleLog('|- empty images. unsaved')
-
-    # prevent next url
-    if (loopType == 'param'):
-        nowParam += 1
-    elif (loopType == 'selector'):
-        nextElements = bs.select(nextSelector)
+        
+    saveImg(tempImgArr, fullWidth, fullHeight, getUniqueFileName(outputImgFileNameYetExt, ext))
+    handleLog('| Saved')
 
 handleLog('='*30)
 handleLog('loop total: %d' % fileNum)
