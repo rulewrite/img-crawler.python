@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import re
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image as PILImage
@@ -8,17 +9,17 @@ from PIL import Image as PILImage
 '''
 TODO: list
 - 속도개선 (이미지 병합 부분, 불필요한 저장부분, PIL 삭제 :: readlines() > requiements.txt 최신화)
-- 인자 받기
+- 다음 버튼 엘리먼트의 href 속성이 아닌 click event로 결려 있을 경우
 - ui 툴로 컨버팅
 - 모듈화, 분할
-- 다음 버튼 엘리먼트의 href 속성이 아닌 click event로 결려 있을 경우
+- 인자 받기 + README.md 업데이트
 '''
 
 #=============================== set parameter
 sameFileNamePass = True
 name = ''
 
-urlOrigin = ''
+urlDomain = ''
 urlPath = ''
 imgSelector = ''
 
@@ -27,6 +28,10 @@ endParam = None
 nextSelector = ''
 
 #=============================== init
+urlRegex = re.compile(r'[^a-zA-Z0-9&#?_=.:/]')
+def checkValidUrl(url):
+    return not urlRegex.search(url)
+
 logTxt = ''
 loopType = None
 if not startParam is None:
@@ -38,8 +43,18 @@ else:
     # quit()
     sys.exit(1)
 
-if (urlOrigin[-1:] == '/'): urlOrigin = urlOrigin[:-1]
-if (urlPath[0] != '/'): urlPath = '/' + urlPath
+if (checkValidUrl(urlDomain)):
+    if (urlDomain[-1:] == '/'): urlDomain = urlDomain[:-1]
+else:
+    print('ERROR:: invalid domain')
+    sys.exit(1)
+
+if (checkValidUrl(urlPath)):
+    if (urlPath[0] != '/'): urlPath = '/' + urlPath
+else:
+    print('ERROR:: Invalid url path')
+    sys.exit(1)
+
 
 outputDir = './' + name + '/'
 outputImgFileNameBase = outputDir + name + '_img_%d'
@@ -80,7 +95,7 @@ def getUniqueFileName(filename, ext):
     return filename + ext
 
 def getAbsoulteRoute(route):
-    return route if '//' in route else urlOrigin + route
+    return route if '//' in route else urlDomain + route
 
 def saveImg(imgArr, fullWidth, fullHeight, filename):
     canvas = PILImage.new('RGB', (fullWidth, fullHeight), 'white')
@@ -130,18 +145,18 @@ def handleLoop():
                 resultMsg = 'DONE:: Param loop is done.'
                 isContinue = False
             else:
-                nowUrl = urlOrigin + urlPath % nowParam
+                nowUrl = urlDomain + urlPath % nowParam
                 nowParam += 1
         elif (loopType == 'selector'):
             if bs is None:
-                nowUrl = urlOrigin + urlPath
+                nowUrl = urlDomain + urlPath
             else:
                 nextEls = bs.select(nextSelector)
                 if (len(nextEls)):
                     found = False
                     for nextEl in nextEls:
-                        nextElHref = nextEl.get('href') # TODO: if href="javascript:alert('is Last.')"
-                        if not nextElHref is None:
+                        nextElHref = nextEl.get('href')
+                        if checkValidUrl(nextElHref):
                             nowUrl = getAbsoulteRoute(nextElHref)
                             found = True
                             break
