@@ -8,45 +8,84 @@ from PIL import Image as PILImage
 
 '''
 TODO: list
-- 속도개선 (이미지 병합 부분, 불필요한 저장부분, PIL 삭제 :: readlines() > requiements.txt 최신화)
-- 다음 버튼 엘리먼트의 href 속성이 아닌 click event로 결려 있을 경우
 - ui 툴로 컨버팅
+- 다음 버튼 엘리먼트의 href 속성이 아닌 click event로 결려 있을 경우
+- 속도개선 (이미지 병합 부분, 불필요한 저장부분, PIL 삭제 :: readlines() > requiements.txt 최신화)
 - 모듈화, 분할
-- 인자 받기 + README.md 업데이트
 '''
 
 #=============================== set parameter
-sameFileNamePass = True
 name = ''
-
+imgSelector = ''
 urlDomain = ''
 urlPath = ''
-imgSelector = ''
 
 startParam = None
 endParam = None
 nextSelector = ''
 
-#=============================== init
-urlRegex = re.compile(r'[^a-zA-Z0-9&#?_=.:/]')
+if __name__ == '__main__':
+    argvLength = len(sys.argv)
+    if (argvLength < 6):
+        print('''
+        $ python run.py (name) (img selector) (protocol + domain) (path + query) (start param [, end param] || next url element selector)
+        
+        name 
+            저장될 디렉토리 및 이미지 파일명
+
+        img selector
+            이미지 파일의 CSS 선택자
+            ex. `.img-wrapper > img`
+
+        protocol + domain
+            프로토콜과 .com, .org등으로 끝나는곳까지의 홈페이지 주소
+            ex. `https://example.com`
+
+        path + query
+            크롤링할 페이지 주소의 패스 + 파라미터 (쿼리)
+            - param 사용시 치환될 부분을 `%s`로 표기
+              ex. `/img/view?page=%s`
+              
+            - 다음 주소를 특정 element로부터 가져와야할 시 그대로 입력
+              입력한 패스 + 파라미터부터 시작
+
+        start param [, end param] || next url element selector
+            - start param
+              only number, 크롤링이 시작될 파라미터
+              path + query에 입력한 `%s`로 start param에서 1씩 더해가며 값을 치환하여 순환
+              end param is optional, 없으면 더이상 이미지를 가져올 수 없을때까지 반복
+
+            - next url element selector
+              다음 페이지 주소를 element로부터 받아와야되는 경우
+              href속성에 담고 있는 element의 선택자를 입력
+              ex. `a.next-btn`
+        ''')
+        # quit()
+        sys.exit(1)
+    else:
+        name = sys.argv[1]
+        imgSelector = sys.argv[2]
+        urlDomain = sys.argv[3]
+        urlPath = sys.argv[4]
+
+        if '%s' in urlPath:
+            startParam = sys.argv[5]
+            if argvLength > 6:
+                endParam = sys.argv[6]
+        else:
+            nextSelector = sys.argv[5]
+
+#=============================== parameter validation
+urlRegex = re.compile(r'[^a-zA-Z0-9&#?_=.:/(%s)]')
 def checkValidUrl(url):
     return not urlRegex.search(url)
 
-logTxt = ''
-loopType = None
-if not startParam is None:
-    loopType = 'param'
-elif not nextSelector is None:
-    loopType = 'selector'
-else:
-    print('ERROR:: Require parameter undefiend')
-    # quit()
-    sys.exit(1)
+# TODO: imgSelector, nextSelector 선택자 밸리데이션
 
 if (checkValidUrl(urlDomain)):
     if (urlDomain[-1:] == '/'): urlDomain = urlDomain[:-1]
 else:
-    print('ERROR:: invalid domain')
+    print('ERROR:: Invalid domain')
     sys.exit(1)
 
 if (checkValidUrl(urlPath)):
@@ -55,9 +94,35 @@ else:
     print('ERROR:: Invalid url path')
     sys.exit(1)
 
+if not startParam is None:
+    try:
+        startParam = int(startParam)
+        if not endParam is None:
+            endParam = int(endParam)
+    except ValueError as err:
+        print('ERROR:: %s param is only number' % ('End' if type(startParam) is int else 'Start'))
+        sys.exit(1)
 
+#=============================== init
+loopType = None
+if not startParam is None:
+    loopType = 'param'
+elif not nextSelector is None:
+    loopType = 'selector'
+
+logTxt = ''
+sameFileNamePass = True
 outputDir = './' + name + '/'
 outputImgFileNameBase = outputDir + name + '_img_%d'
+
+# mkdir
+if not (os.path.isdir(outputDir)):
+    try:
+        print('Directory create "%s"' % outputDir)
+        os.makedirs(outputDir)
+    except OSError as err:
+        print('ERROR:: Failed to make directory: ', err)
+        sys.exit(1)
 
 #=============================== function declaration
 def handleLog(addTxt = None):
@@ -107,16 +172,6 @@ def saveImg(imgArr, fullWidth, fullHeight, filename):
     canvas.save(filename)
 
 #=============================== start logic
-# mkdir
-try:
-    if not (os.path.isdir(outputDir)):
-        print('Directory create "%s"' % outputDir)
-        os.makedirs(outputDir)
-except OSError as err:
-    print('ERROR:: Failed to make directory: ', err)
-    sys.exit(1)
-
-# loop start
 fileNum = 0
 
 nowUrl = ''
