@@ -1,10 +1,9 @@
-import os
-import sys
-import time
-import re
-import requests
-from bs4 import BeautifulSoup
-from PIL import Image as PILImage
+import os # dir, file handling
+import sys # get parameter, exit
+from bs4 import BeautifulSoup # html parsing
+from PIL import Image as PILImage # img merge
+
+from mod import handleLog, saveImg, Valid, Get
 
 '''
 TODO: list
@@ -30,7 +29,7 @@ if __name__ == '__main__':
         print('''
         $ python run.py (name) (img selector) (protocol + domain) (path + query) (start param [, end param] || next url element selector)
         
-        name 
+        name
             저장될 디렉토리 및 이미지 파일명
 
         img selector
@@ -76,19 +75,15 @@ if __name__ == '__main__':
             nextSelector = sys.argv[5]
 
 #=============================== parameter validation
-urlRegex = re.compile(r'[^a-zA-Z0-9&#?_=.:/(%s)]')
-def checkValidUrl(url):
-    return not urlRegex.search(url)
-
 # TODO: imgSelector, nextSelector 선택자 밸리데이션
 
-if (checkValidUrl(urlDomain)):
+if (Valid.url(urlDomain)):
     if (urlDomain[-1:] == '/'): urlDomain = urlDomain[:-1]
 else:
     print('ERROR:: Invalid domain')
     sys.exit(1)
 
-if (checkValidUrl(urlPath)):
+if (Valid.url(urlPath)):
     if (urlPath[0] != '/'): urlPath = '/' + urlPath
 else:
     print('ERROR:: Invalid url path')
@@ -110,66 +105,18 @@ if not startParam is None:
 elif not nextSelector is None:
     loopType = 'selector'
 
-logTxt = ''
 sameFileNamePass = True
 outputDir = './' + name + '/'
 outputImgFileNameBase = outputDir + name + '_img_%d'
 
 # mkdir
-if not (os.path.isdir(outputDir)):
+if not (os.path.isdir(outputDir)): # TODO: unique dir
     try:
         print('Directory create "%s"' % outputDir)
         os.makedirs(outputDir)
     except OSError as err:
         print('ERROR:: Failed to make directory: ', err)
         sys.exit(1)
-
-#=============================== function declaration
-def handleLog(addTxt = None):
-    global logTxt
-    if (addTxt is None):
-        now = time.localtime()
-        with open(outputDir + 'log_%02d%02d%02d_%02d%02d%02d.txt' % (now.tm_year, now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec), 'w') as f:
-            f.write(logTxt)
-    else:
-        print(addTxt)
-        logTxt += addTxt + '\n'
-
-def getExtension(filename):
-    ext = '.'.join(filename.split('.')[1:])
-    return '.' + ext if ext else '.jpg'
-
-def reqCheck(url):
-    try:
-        res = requests.get(url)
-        if (200 > res.status_code or res.status_code >= 300):
-            handleLog('ERROR:: HTTP status code: %s' % res.status_code)
-            res = False
-    except:
-        handleLog('ERROR:: HTTP request error')
-        res = False
-    return res
-
-def getUniqueFileName(filename, ext):
-    if (os.path.isfile(filename + ext)):
-        filename += ' (%d)'
-        idx = 1
-        while os.path.isfile(filename % idx + ext):
-            idx += 1
-        filename = filename % idx
-    return filename + ext
-
-def getAbsoulteRoute(route):
-    return route if '//' in route else urlDomain + route
-
-def saveImg(imgArr, fullWidth, fullHeight, filename):
-    canvas = PILImage.new('RGB', (fullWidth, fullHeight), 'white')
-    pasteHeightPosition = 0
-    for img in imgArr:
-        height = img.size[1]
-        canvas.paste(img, (0, pasteHeightPosition))
-        pasteHeightPosition += height
-    canvas.save(filename)
 
 #=============================== start logic
 fileNum = 0
@@ -211,8 +158,8 @@ def handleLoop():
                     found = False
                     for nextEl in nextEls:
                         nextElHref = nextEl.get('href')
-                        if checkValidUrl(nextElHref):
-                            nowUrl = getAbsoulteRoute(nextElHref)
+                        if Valid.url(nextElHref):
+                            nowUrl = Get.absoluteRoute(urlDomain, nextElHref)
                             found = True
                             break
                     if found is False:
@@ -232,9 +179,9 @@ while handleLoop():
 
     # HTTP GET page, html parsing
     handleLog('| %s' % nowUrl)
-    res = reqCheck(nowUrl)
+    res = Valid.req(nowUrl)
     if not res:
-        handleLog('| Page request error > continue')
+        handleLog('| Page request error => continue')
         pageReqErrCnt += 1
         continue
     bs = BeautifulSoup(res.text, 'html.parser')
@@ -242,7 +189,7 @@ while handleLoop():
     # get img
     imgTags = bs.select(imgSelector)
     if not len(imgTags):
-        handleLog('| Img tag empty > continue')
+        handleLog('| Img tag empty => continue')
         selectorEmptyCnt += 1
         continue
     handleLog('| found %d images' % len(imgTags))
@@ -251,25 +198,25 @@ while handleLoop():
     tempImgArr, fullWidth, fullHeight = [], 0, 0
     for imgTag in imgTags:
         imgSrc = imgTag.get('src')
-        imgRoute = getAbsoulteRoute(imgSrc)
+        imgRoute = Get.absoluteRoute(urlDomain, imgSrc)
 
         # set extention
         if ext is None: 
-            ext = getExtension(os.path.basename(imgSrc))
+            ext = Get.extension(os.path.basename(imgSrc))
             # already file pass
             if sameFileNamePass and os.path.isfile(outputImgFileNameYetExt + ext):
                 alreadyFile = True
                 break
 
         # HTTP GET img
-        imgRes = reqCheck(imgRoute)
+        imgRes = Valid.req(imgRoute)
         if not imgRes:
-            handleLog('| Img request error > break')
+            handleLog('| Img request error => break')
             imgReqErrUrl = imgRoute
             break
 
         # append img
-        tempImgFileName = getUniqueFileName(outputImgFileNameYetExt + '_temp_%d' % len(tempImgArr), ext)
+        tempImgFileName = Get.uniqueFileName(outputImgFileNameYetExt + '_temp_%d' % len(tempImgArr), ext)
         with open(tempImgFileName, 'wb') as f:
             f.write(imgRes.content)
 
@@ -285,7 +232,7 @@ while handleLoop():
                 if (fullHeight > 65500):
                     handleLog('| Too long so divide save' % fileNum)
                     fullHeight -= height
-                    saveImg(tempImgArr[:-1], fullWidth, fullHeight, getUniqueFileName(outputImgFileNameYetExt, ext))
+                    saveImg(tempImgArr[:-1], fullWidth, fullHeight, Get.uniqueFileName(outputImgFileNameYetExt, ext))
                     
                     tempImgArr = [img]
                     fullHeight = height
@@ -300,15 +247,17 @@ while handleLoop():
                 handleLog('| ERROR:: Pillow error outputImgFileName: %s, tempImgFileName: %s' % (outputImgFileNameYetExt, tempImgFileName))
 
     # merge imgs in page
-    if (alreadyFile):
+    if (alreadyFile): # TODO: url get 하고 파싱 전에 처리해도 될 듯?
         handleLog('CONTINUE:: %d page is already' % fileNum)
         continue
         
-    saveImg(tempImgArr, fullWidth, fullHeight, getUniqueFileName(outputImgFileNameYetExt, ext))
+    saveImg(tempImgArr, fullWidth, fullHeight, Get.uniqueFileName(outputImgFileNameYetExt, ext))
     handleLog('| Saved')
 
 handleLog('='*30)
-handleLog('loop total: %d' % fileNum)
-handleLog(resultMsg)
+handleLog('''
+loop total: %d
+%s
+''' % (fileNum, resultMsg))
 handleLog('='*30)
-handleLog()
+handleLog(None, outputDir)
