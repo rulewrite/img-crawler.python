@@ -3,7 +3,7 @@ import sys # get parameter, exit
 from bs4 import BeautifulSoup # html parsing
 from PIL import Image as PILImage # img merge
 
-from mod import handleLog, saveImg, Valid, Get
+from mod import handleLog, saveImg, VALID, GET
 
 '''
 TODO: list
@@ -77,13 +77,13 @@ if __name__ == '__main__':
 #=============================== parameter validation
 # TODO: imgSelector, nextSelector 선택자 밸리데이션
 
-if (Valid.url(urlDomain)):
+if (VALID.url(urlDomain)):
     if (urlDomain[-1:] == '/'): urlDomain = urlDomain[:-1]
 else:
     print('ERROR:: Invalid domain')
     sys.exit(1)
 
-if (Valid.url(urlPath)):
+if (VALID.url(urlPath)):
     if (urlPath[0] != '/'): urlPath = '/' + urlPath
 else:
     print('ERROR:: Invalid url path')
@@ -106,17 +106,16 @@ elif not nextSelector is None:
     loopType = 'selector'
 
 sameFileNamePass = True
-outputDir = './' + name + '/'
+outputDir = GET.uniqueDirName('./' + name) + '/'
 outputImgFileNameBase = outputDir + name + '_img_%d'
 
 # mkdir
-if not (os.path.isdir(outputDir)): # TODO: unique dir
-    try:
-        print('Directory create "%s"' % outputDir)
-        os.makedirs(outputDir)
-    except OSError as err:
-        print('ERROR:: Failed to make directory: ', err)
-        sys.exit(1)
+try:
+    print('Directory create "%s"' % outputDir)
+    os.makedirs(outputDir)
+except OSError as err:
+    print('ERROR:: Failed to make directory: ', err)
+    sys.exit(1)
 
 #=============================== start logic
 fileNum = 0
@@ -124,7 +123,7 @@ fileNum = 0
 nowUrl = ''
 nowParam = startParam
 bs = None
-selectorEmptyCnt, pageReqErrCnt, imgReqErrUrl = 0, 0, False
+imgReqErrUrl, selectorEmptyCnt, pageReqErrCnt = False, 0, 0
 
 resultMsg = ''
 def handleLoop():
@@ -158,8 +157,8 @@ def handleLoop():
                     found = False
                     for nextEl in nextEls:
                         nextElHref = nextEl.get('href')
-                        if Valid.url(nextElHref):
-                            nowUrl = Get.absoluteRoute(urlDomain, nextElHref)
+                        if VALID.url(nextElHref):
+                            nowUrl = GET.absoluteRoute(urlDomain, nextElHref)
                             found = True
                             break
                     if found is False:
@@ -179,7 +178,7 @@ while handleLoop():
 
     # HTTP GET page, html parsing
     handleLog('| %s' % nowUrl)
-    res = Valid.req(nowUrl)
+    res = VALID.req(nowUrl)
     if not res:
         handleLog('| Page request error => continue')
         pageReqErrCnt += 1
@@ -198,25 +197,25 @@ while handleLoop():
     tempImgArr, fullWidth, fullHeight = [], 0, 0
     for imgTag in imgTags:
         imgSrc = imgTag.get('src')
-        imgRoute = Get.absoluteRoute(urlDomain, imgSrc)
+        imgRoute = GET.absoluteRoute(urlDomain, imgSrc)
 
         # set extention
         if ext is None: 
-            ext = Get.extension(os.path.basename(imgSrc))
+            ext = GET.extension(os.path.basename(imgSrc))
             # already file pass
             if sameFileNamePass and os.path.isfile(outputImgFileNameYetExt + ext):
                 alreadyFile = True
                 break
 
         # HTTP GET img
-        imgRes = Valid.req(imgRoute)
+        imgRes = VALID.req(imgRoute)
         if not imgRes:
             handleLog('| Img request error => break')
             imgReqErrUrl = imgRoute
             break
 
         # append img
-        tempImgFileName = Get.uniqueFileName(outputImgFileNameYetExt + '_temp_%d' % len(tempImgArr), ext)
+        tempImgFileName = GET.uniqueFileName(outputImgFileNameYetExt + '_temp_%d' % len(tempImgArr), ext)
         with open(tempImgFileName, 'wb') as f:
             f.write(imgRes.content)
 
@@ -232,7 +231,7 @@ while handleLoop():
                 if (fullHeight > 65500):
                     handleLog('| Too long so divide save' % fileNum)
                     fullHeight -= height
-                    saveImg(tempImgArr[:-1], fullWidth, fullHeight, Get.uniqueFileName(outputImgFileNameYetExt, ext))
+                    saveImg(tempImgArr[:-1], fullWidth, fullHeight, GET.uniqueFileName(outputImgFileNameYetExt, ext))
                     
                     tempImgArr = [img]
                     fullHeight = height
@@ -251,7 +250,7 @@ while handleLoop():
         handleLog('CONTINUE:: %d page is already' % fileNum)
         continue
         
-    saveImg(tempImgArr, fullWidth, fullHeight, Get.uniqueFileName(outputImgFileNameYetExt, ext))
+    saveImg(tempImgArr, fullWidth, fullHeight, GET.uniqueFileName(outputImgFileNameYetExt, ext))
     handleLog('| Saved')
 
 handleLog('='*30)

@@ -26,7 +26,7 @@ if __name__ != '__main__':
         canvas.save(filename)
                 
     urlRegex = re.compile(r'[^a-zA-Z0-9&#?_=.:/%]')
-    class Valid():
+    class VALID():
         @staticmethod
         def url(url):
             return not urlRegex.search(url)
@@ -43,7 +43,7 @@ if __name__ != '__main__':
                 res = False
             return res
     
-    class Get():
+    class GET():
         @staticmethod
         def extension(filename):
             ext = '.'.join(filename.split('.')[1:])
@@ -58,6 +58,16 @@ if __name__ != '__main__':
                     idx += 1
                 filename = filename % idx
             return filename + ext
+
+        @staticmethod
+        def uniqueDirName(dirName):
+            if (os.path.isdir(dirName)):
+                dirName += ' (%d)'
+                idx = 1
+                while os.path.isdir(dirName % idx):
+                    idx += 1
+                dirName = dirName % idx
+            return dirName
 
         @staticmethod
         def absoluteRoute(urlDomain, route):
