@@ -1,12 +1,13 @@
-import os # dir, file handling
-import re # regex
+import os  # dir, file handling
+import re  # regex
 import time
 import requests
-from PIL import Image as PILImage # img merge
+from PIL import Image as PILImage  # img merge
 
 if __name__ != '__main__':
     logTxt = ''
-    def handleLog(addTxt = None, outputDir = './'):
+
+    def handleLog(addTxt=None, outputDir='./'):
         global logTxt
         if (addTxt is None):
             now = time.localtime()
@@ -24,8 +25,9 @@ if __name__ != '__main__':
             canvas.paste(img, (0, pasteHeightPosition))
             pasteHeightPosition += height
         canvas.save(filename)
-                
+
     urlRegex = re.compile(r'[^a-zA-Z0-9&#?_=.:/%]')
+
     class VALID():
         @staticmethod
         def url(url):
@@ -36,19 +38,21 @@ if __name__ != '__main__':
             try:
                 res = requests.get(url)
                 if (200 > res.status_code or res.status_code >= 300):
-                    handleLog('| ERROR:: HTTP status code: %s' % res.status_code)
+                    handleLog(
+                        '| ERROR:: HTTP status code: %s' %
+                        res.status_code)
                     res = False
-            except:
+            except BaseException:
                 handleLog('| ERROR:: HTTP request error')
                 res = False
             return res
-    
+
     class GET():
         @staticmethod
         def extension(filename):
             ext = '.'.join(filename.split('.')[1:])
             return '.' + ext if ext else '.jpg'
-        
+
         @staticmethod
         def uniqueFileName(filename, ext):
             if (os.path.isfile(filename + ext)):

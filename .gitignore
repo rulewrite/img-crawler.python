@@ -1,4 +1,5 @@
 .vscode
 .python-version
+.pylintrc
 .DS_Store
 __pycache__/
